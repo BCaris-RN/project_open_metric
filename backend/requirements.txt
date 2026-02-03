@@ -1,0 +1,9 @@
+﻿google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+pandas
+python-dotenv
+playwright
+lxml
+html5lib
