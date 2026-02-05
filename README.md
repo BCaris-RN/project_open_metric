@@ -6,8 +6,8 @@ Self-hosted meta-aggregator that orchestrates free-tier SaaS tools (Metricool, B
 - Phase 1: Data lake on Google Drive (CSV bridge) implemented
 - Phase 2: Metricool analytics harvester implemented (with retries + SQLite storage)
 - Phase 3: Buffer queue manager implemented (with retries)
-- Phase 4: NotebookLM sync implemented (Drive source update)
-- Phase 5: Flutter dashboard implemented
+- Phase 4: NotebookLM sync implemented (Drive source update) ✅
+- Phase 5: Flutter dashboard implemented ✅
 
 **Architecture Summary**
 - SQLite is the local source of truth for analytics (Drive CSV remains for NotebookLM).
