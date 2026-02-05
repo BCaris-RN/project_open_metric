@@ -33,8 +33,10 @@ class BackendService {
 
     _starting = false;
 
-    ProcessSignal.sigint.watch().listen((_) => kill());
-    ProcessSignal.sigterm.watch().listen((_) => kill());
+    if (!Platform.isWindows) {
+      ProcessSignal.sigint.watch().listen((_) => kill());
+      ProcessSignal.sigterm.watch().listen((_) => kill());
+    }
   }
 
   Future<bool> isReady() async {
