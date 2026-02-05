@@ -6,7 +6,13 @@ import pandas as pd
 from dotenv import load_dotenv
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
-from backend.db_init import authenticate_drive, DATA_DIR, FILE_NAME, MASTER_SCHEMA
+from backend.db_init import (
+    authenticate_drive,
+    DATA_DIR,
+    FILE_NAME,
+    MASTER_SCHEMA,
+    normalize_drive_folder_id,
+)
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 ENV_PATH = BASE_DIR / "config" / ".env"
@@ -25,7 +31,7 @@ def _require_env(var_name: str) -> str:
 class DriveSync:
     def __init__(self):
         self.service = authenticate_drive()
-        self.folder_id = _require_env("GOOGLE_DRIVE_FOLDER_ID")
+        self.folder_id = normalize_drive_folder_id(_require_env("GOOGLE_DRIVE_FOLDER_ID"))
         self.local_path = DATA_DIR / FILE_NAME
         self.local_path.parent.mkdir(parents=True, exist_ok=True)
         self.file_id = self._get_file_id()

@@ -37,6 +37,7 @@ migrate_working_dir/
 backend/config/.env
 backend/keys/
 backend/data_cache/
+keys/
 
 # Python cache and dotenv
 __pycache__/

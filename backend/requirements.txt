@@ -7,3 +7,7 @@ python-dotenv
 playwright
 lxml
 html5lib
+fastapi
+uvicorn
+pydantic
+requests

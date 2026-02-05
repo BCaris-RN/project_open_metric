@@ -1,5 +1,6 @@
-﻿import asyncio
+import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -7,24 +8,42 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BASE_DIR.parent
 ENV_PATH = BASE_DIR / "config" / ".env"
 load_dotenv(ENV_PATH)
 
 QUEUE_FILE = BASE_DIR / "data_cache" / "pending_posts.json"
 BUFFER_EMAIL = os.getenv("BUFFER_EMAIL")
 BUFFER_PASSWORD = os.getenv("BUFFER_PASSWORD")
-BUFFER_COOKIES_PATH = os.getenv("BUFFER_COOKIES_PATH")
+BUFFER_COOKIES_PATH = os.getenv(
+    "BUFFER_COOKIES_PATH", str(PROJECT_ROOT / "keys" / "buffer_cookies.json")
+)
 BUFFER_MAX_QUEUE = int(os.getenv("BUFFER_MAX_QUEUE", "10"))
 BUFFER_HEADLESS = os.getenv("BUFFER_HEADLESS", "true").lower() == "true"
+
+logger = logging.getLogger("open_metric.queue")
 
 
 def _require_env(var_name: str) -> str:
     value = os.getenv(var_name)
     if not value:
-        print(f"Error: Missing required env var {var_name}.")
-        print(f"-> Set it in {ENV_PATH}")
+        logger.error("Missing required env var %s. Set it in %s", var_name, ENV_PATH)
         raise SystemExit(1)
     return value
+
+
+async def _retry(action, label: str, attempts: int = 3, delay: float = 1.0):
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await action()
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("%s failed (attempt %s/%s): %s", label, attempt, attempts, exc)
+            if attempt < attempts:
+                await asyncio.sleep(delay)
+                delay *= 2
+    raise last_exc
 
 
 class QueueManager:
@@ -38,6 +57,7 @@ class QueueManager:
             return json.load(f)
 
     def _save_queue(self) -> None:
+        QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(QUEUE_FILE, "w", encoding="utf-8") as f:
             json.dump(self.queue_data, f, indent=2)
 
@@ -63,63 +83,92 @@ class QueueManager:
             _require_env("BUFFER_EMAIL")
             _require_env("BUFFER_PASSWORD")
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=BUFFER_HEADLESS)
-            context = await browser.new_context(
-                storage_state=str(cookies_path) if use_cookies else None
-            )
-            page = await context.new_page()
+        browser = None
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=BUFFER_HEADLESS)
+                context = await browser.new_context(
+                    storage_state=str(cookies_path) if use_cookies else None
+                )
+                page = await context.new_page()
 
-            print("Logging into Buffer...")
-            await page.goto("https://login.buffer.com/login", wait_until="domcontentloaded")
+                logger.info("Logging into Buffer...")
+                await _retry(
+                    lambda: page.goto(
+                        "https://login.buffer.com/login", wait_until="domcontentloaded"
+                    ),
+                    "Buffer login page",
+                )
 
-            if await page.locator('input[name="email"]').is_visible():
-                await page.fill('input[name="email"]', BUFFER_EMAIL or "")
-                await page.fill('input[name="password"]', BUFFER_PASSWORD or "")
-                await page.click('button[type="submit"]')
-                await page.wait_for_load_state("networkidle")
+                if await page.locator('input[name="email"]').is_visible():
+                    await page.fill('input[name="email"]', BUFFER_EMAIL or "")
+                    await page.fill('input[name="password"]', BUFFER_PASSWORD or "")
+                    await page.click('button[type="submit"]')
+                    await page.wait_for_load_state("networkidle")
 
-            await page.wait_for_url("**/publish/**", timeout=60000)
-            print("Login successful.")
+                await _retry(
+                    lambda: page.wait_for_url("**/publish/**", timeout=60000),
+                    "Buffer publish URL",
+                )
+                logger.info("Login successful.")
 
-            queue_items = await page.locator("div[data-testid='queue-item']").count()
-            print(f"Current Queue Count: {queue_items}/{BUFFER_MAX_QUEUE}")
+                queue_items = await page.locator("div[data-testid='queue-item']").count()
+                logger.info("Current Queue Count: %s/%s", queue_items, BUFFER_MAX_QUEUE)
 
-            if queue_items >= BUFFER_MAX_QUEUE:
-                print("Queue is full. Exiting.")
+                if queue_items >= BUFFER_MAX_QUEUE:
+                    logger.info("Queue is full. Exiting.")
+                    await browser.close()
+                    return
+
+                post = self.get_next_post()
+                if not post:
+                    logger.info("No pending posts in local queue.")
+                    await browser.close()
+                    return
+
+                logger.info("Scheduling Post: %s", post.get("id"))
+
+                await _retry(
+                    lambda: page.click("button[data-testid='composer-open-button']"),
+                    "Open composer",
+                )
+                await _retry(
+                    lambda: page.wait_for_selector("div[role='textbox']"),
+                    "Composer textbox",
+                )
+                await page.type("div[role='textbox']", post.get("text", ""))
+
+                image_path = post.get("image_path")
+                if image_path:
+                    try:
+                        async with page.expect_file_chooser() as fc_info:
+                            await page.click("button[aria-label='Add image or video']")
+                        file_chooser = await fc_info.value
+                        await file_chooser.set_files(image_path)
+                    except Exception:
+                        logger.warning("Image upload failed. Continuing without image.")
+
+                await _retry(
+                    lambda: page.click("button[data-testid='composer-send-button']"),
+                    "Submit post",
+                )
+                await _retry(
+                    lambda: page.wait_for_selector("div[role='textbox']", state="hidden"),
+                    "Composer close",
+                )
+                logger.info("Post added to Buffer queue.")
+
+                self.mark_as_scheduled(post.get("id", ""))
                 await browser.close()
-                return
-
-            post = self.get_next_post()
-            if not post:
-                print("No pending posts in local queue.")
-                await browser.close()
-                return
-
-            print(f"Scheduling Post: {post.get('id')}")
-
-            await page.click("button[data-testid='composer-open-button']")
-            await page.wait_for_selector("div[role='textbox']")
-            await page.type("div[role='textbox']", post.get("text", ""))
-
-            image_path = post.get("image_path")
-            if image_path:
+        finally:
+            if browser:
                 try:
-                    async with page.expect_file_chooser() as fc_info:
-                        await page.click("button[aria-label='Add image or video']")
-                    file_chooser = await fc_info.value
-                    await file_chooser.set_files(image_path)
+                    await browser.close()
                 except Exception:
-                    print("Image upload failed. Continuing without image.")
-
-            await page.click("button[data-testid='composer-send-button']")
-            await page.wait_for_selector("div[role='textbox']", state="hidden")
-            print("Post added to Buffer queue.")
-
-            self.mark_as_scheduled(post.get("id", ""))
-            await browser.close()
+                    pass
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     manager = QueueManager()
     asyncio.run(manager.fill_slots())

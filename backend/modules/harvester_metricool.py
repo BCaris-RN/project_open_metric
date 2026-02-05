@@ -1,5 +1,6 @@
-﻿import asyncio
+import asyncio
 import hashlib
+import logging
 import os
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.modules.drive_sync import DriveSync
+from backend.modules.sqlite_store import SQLiteStore
 
 ENV_PATH = BASE_DIR / "config" / ".env"
 load_dotenv(ENV_PATH)
@@ -21,16 +23,17 @@ load_dotenv(ENV_PATH)
 EMAIL = os.getenv("METRICOOL_EMAIL")
 PASSWORD = os.getenv("METRICOOL_PASSWORD")
 COOKIES_PATH = os.getenv(
-    "METRICOOL_COOKIES_PATH", str(BASE_DIR / "keys" / "metricool_cookies.json")
+    "METRICOOL_COOKIES_PATH", str(PROJECT_ROOT / "keys" / "metricool_cookies.json")
 )
 ANALYTICS_URL = os.getenv("METRICOOL_ANALYTICS_URL")
+
+logger = logging.getLogger("open_metric.harvester")
 
 
 def _require_env(var_name: str) -> str:
     value = os.getenv(var_name)
     if not value:
-        print(f"Error: Missing required env var {var_name}.")
-        print(f"-> Set it in {ENV_PATH}")
+        logger.error("Missing required env var %s. Set it in %s", var_name, ENV_PATH)
         raise SystemExit(1)
     return value
 
@@ -86,6 +89,20 @@ def _to_iso(value) -> str:
 class MetricoolHarvester:
     def __init__(self):
         self.sync_engine = DriveSync()
+        self.store = SQLiteStore()
+
+    async def _retry(self, action, label: str, attempts: int = 3, delay: float = 1.0):
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return await action()
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("%s failed (attempt %s/%s): %s", label, attempt, attempts, exc)
+                if attempt < attempts:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+        raise last_exc
 
     async def scrape(self):
         cookies_path = Path(COOKIES_PATH)
@@ -102,8 +119,11 @@ class MetricoolHarvester:
             )
             page = await context.new_page()
 
-            print("Logging into Metricool...")
-            await page.goto("https://app.metricool.com/", wait_until="domcontentloaded")
+            logger.info("Logging into Metricool...")
+            await self._retry(
+                lambda: page.goto("https://app.metricool.com/", wait_until="domcontentloaded"),
+                "Metricool landing page",
+            )
 
             if await page.locator('input[name="email"]').is_visible():
                 await page.fill('input[name="email"]', EMAIL or "")
@@ -112,40 +132,61 @@ class MetricoolHarvester:
                 await page.wait_for_load_state("networkidle")
 
             if ANALYTICS_URL:
-                await page.goto(ANALYTICS_URL, wait_until="networkidle")
+                await self._retry(
+                    lambda: page.goto(ANALYTICS_URL, wait_until="networkidle"),
+                    "Metricool analytics URL",
+                )
             else:
-                print("Navigating to Analytics...")
-                try:
-                    await page.get_by_role("link", name="Analytics").click(timeout=10000)
-                except Exception:
+                logger.info("Navigating to Analytics...")
+
+                async def _open_analytics():
                     try:
-                        await page.click("text=Analytics", timeout=10000)
+                        await page.get_by_role("link", name="Analytics").click(timeout=10000)
+                        return True
                     except Exception:
-                        pass
+                        await page.click("text=Analytics", timeout=10000)
+                        return True
+
+                await self._retry(_open_analytics, "Analytics navigation")
                 await page.wait_for_timeout(3000)
 
-            try:
-                await page.get_by_role("button", name="List").click(timeout=5000)
-            except Exception:
+            async def _open_list():
                 try:
-                    await page.click("text=List", timeout=5000)
+                    await page.get_by_role("button", name="List").click(timeout=5000)
+                    return True
                 except Exception:
-                    pass
+                    await page.click("text=List", timeout=5000)
+                    return True
 
-            await page.wait_for_selector("table", timeout=30000)
+            await self._retry(_open_list, "List toggle")
+
+            try:
+                await self._retry(
+                    lambda: page.wait_for_selector("table", timeout=30000),
+                    "Metricool table",
+                )
+            except Exception as exc:
+                logger.error("No table found after retries: %s", exc)
+                await browser.close()
+                return
 
             html = await page.content()
             dfs = pd.read_html(html)
             if not dfs:
-                print("No table found.")
+                logger.warning("No table found in page HTML.")
                 await browser.close()
                 return
 
             raw_df = dfs[0]
-            print(f"Scraped {len(raw_df)} rows from Metricool.")
+            logger.info("Scraped %s rows from Metricool.", len(raw_df))
 
             clean_df = self.normalize_data(raw_df)
-            self.sync_engine.push_update(clean_df)
+            inserted = self.store.upsert_df(clean_df)
+            logger.info("SQLite insert: %s new rows", inserted)
+            try:
+                await asyncio.to_thread(self.sync_engine.push_update, clean_df)
+            except Exception as exc:
+                logger.warning("Drive sync failed: %s", exc)
 
             await browser.close()
 
@@ -221,5 +262,6 @@ class MetricoolHarvester:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     harvester = MetricoolHarvester()
     asyncio.run(harvester.scrape())

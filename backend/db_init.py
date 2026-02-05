@@ -1,6 +1,8 @@
 ﻿import os
+import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -51,13 +53,30 @@ def _resolve_path(path_value: str) -> Path:
     return path
 
 
+def normalize_drive_folder_id(raw_value: str) -> str:
+    """Accept either a raw Drive folder ID or a full Google Drive URL."""
+    value = raw_value.strip()
+    if not value:
+        return value
+
+    if "drive.google.com" in value:
+        parsed = urlparse(value)
+        parts = [part for part in parsed.path.split("/") if part]
+        if "folders" in parts:
+            idx = parts.index("folders")
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
+
+    return re.split(r"[?&#/]", value, maxsplit=1)[0]
+
+
 def authenticate_drive():
     """Authenticates using the Service Account."""
     service_account_path = _resolve_path(_require_env("GOOGLE_APPLICATION_CREDENTIALS"))
 
     if not service_account_path.exists():
         print(f"Error: Service account key not found at {service_account_path}")
-        print("-> Place your .json key in backend/keys/ or update GOOGLE_APPLICATION_CREDENTIALS.")
+        print("-> Place your .json key in keys/ or update GOOGLE_APPLICATION_CREDENTIALS.")
         sys.exit(1)
 
     scopes = ["https://www.googleapis.com/auth/drive"]
@@ -68,7 +87,7 @@ def authenticate_drive():
 
 
 def init_data_lake():
-    folder_id = _require_env("GOOGLE_DRIVE_FOLDER_ID")
+    folder_id = normalize_drive_folder_id(_require_env("GOOGLE_DRIVE_FOLDER_ID"))
     print(f"Connecting to Google Drive (Folder ID: {folder_id})...")
     service = authenticate_drive()
 

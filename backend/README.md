@@ -18,6 +18,9 @@ Required for Google Drive:
 ```
 GOOGLE_APPLICATION_CREDENTIALS=../keys/service_account.json
 GOOGLE_DRIVE_FOLDER_ID=YOUR_FOLDER_ID_HERE
+NOTEBOOKLM_SOURCE_FILE_ID=OPTIONAL_FILE_ID
+NOTEBOOKLM_SOURCE_NAME=NotebookLM_Source.csv
+NOTEBOOKLM_FOLDER_ID=OPTIONAL_FOLDER_ID
 ```
 
 Metricool optional values:
@@ -35,6 +38,17 @@ BUFFER_PASSWORD=your_password
 BUFFER_COOKIES_PATH=../keys/buffer_cookies.json
 BUFFER_MAX_QUEUE=10
 BUFFER_HEADLESS=true
+```
+
+Optional API key:
+```
+OPEN_METRIC_API_KEY=your_local_token
+```
+If set, include it in requests as `X-API-Key` or pass it to Flutter with `--dart-define=OPEN_METRIC_API_KEY=your_local_token`.
+
+Optional SQLite location:
+```
+SQLITE_DB_PATH=../backend/data_cache/open_metric.db
 ```
 
 **Key Scripts**
@@ -72,6 +86,7 @@ Create or edit `backend/data_cache/pending_posts.json`. Example shape:
 ```
 
 **Notes**
-- Use cookies to avoid frequent logins. Store them in `backend/keys/`.
-- `backend/config/.env`, `backend/keys/`, and `backend/data_cache/` are gitignored.
+- Use cookies to avoid frequent logins. Store them in `keys/`.
+- `backend/config/.env`, `keys/`, and `backend/data_cache/` are gitignored.
 - Headless selectors may drift; update them in the modules if UI changes.
+- If `OPEN_METRIC_API_KEY` is set, include it in requests as `X-API-Key`.
