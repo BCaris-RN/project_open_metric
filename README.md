@@ -116,6 +116,7 @@ SQLITE_DB_PATH=../backend/data_cache/open_metric.db
 - `backend/config/.env`, `keys/`, and `backend/data_cache/` are gitignored.
 - Use cookies to avoid frequent logins for headless automations.
 - If `OPEN_METRIC_API_KEY` is set, include it in requests as `X-API-Key`.
+- Never commit passwords, API keys, or session cookies. Always keep secrets in `keys/` and `.env` files only.
 
 **Disclaimer**
 This project uses browser automation to interact with third-party services. Review each service's Terms of Service and use responsibly.
