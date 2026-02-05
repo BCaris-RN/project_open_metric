@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import sys
 from pathlib import Path
@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+
+from backend.modules.config_store import get_drive_folder_id, get_service_account_path
 
 # --- 1. CONFIGURATION ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,11 +39,10 @@ MASTER_SCHEMA = [
 ]
 
 
-def _require_env(var_name: str) -> str:
-    value = os.getenv(var_name)
+def _require_value(label: str, value: str | None) -> str:
     if not value:
-        print(f"Error: Missing required env var {var_name}.")
-        print(f"-> Set it in {ENV_PATH}")
+        print(f"Error: Missing required value for {label}.")
+        print("-> Configure it via the app Settings screen.")
         sys.exit(1)
     return value
 
@@ -72,11 +73,13 @@ def normalize_drive_folder_id(raw_value: str) -> str:
 
 def authenticate_drive():
     """Authenticates using the Service Account."""
-    service_account_path = _resolve_path(_require_env("GOOGLE_APPLICATION_CREDENTIALS"))
+    service_account_path = _resolve_path(
+        _require_value("service_account_path", get_service_account_path())
+    )
 
     if not service_account_path.exists():
         print(f"Error: Service account key not found at {service_account_path}")
-        print("-> Place your .json key in keys/ or update GOOGLE_APPLICATION_CREDENTIALS.")
+        print("-> Place your .json key in keys/ or update settings.")
         sys.exit(1)
 
     scopes = ["https://www.googleapis.com/auth/drive"]
@@ -87,7 +90,9 @@ def authenticate_drive():
 
 
 def init_data_lake():
-    folder_id = normalize_drive_folder_id(_require_env("GOOGLE_DRIVE_FOLDER_ID"))
+    folder_id = normalize_drive_folder_id(
+        _require_value("drive_id", get_drive_folder_id())
+    )
     print(f"Connecting to Google Drive (Folder ID: {folder_id})...")
     service = authenticate_drive()
 

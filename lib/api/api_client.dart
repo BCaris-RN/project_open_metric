@@ -66,6 +66,10 @@ final logsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
   return ['System Offline... Check Connection.'];
 });
 
+final configProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  return fetchConfigStatus();
+});
+
 Future<void> triggerAction(String endpoint) async {
   try {
     await http.post(Uri.parse('$baseUrl/action/$endpoint'), headers: _headers());
@@ -134,6 +138,59 @@ Future<bool> syncBrain() async {
   } catch (e) {
     // ignore: avoid_print
     print('Brain sync failed: $e');
+    return false;
+  }
+}
+
+Future<Map<String, dynamic>> fetchConfigStatus() async {
+  try {
+    final response = await http.get(Uri.parse('$baseUrl/config'), headers: _headers());
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data is Map) {
+        return data.map((key, value) => MapEntry(key.toString(), value));
+      }
+    }
+  } catch (e) {
+    // ignore: avoid_print
+    print('Config fetch failed: $e');
+  }
+  return {};
+}
+
+Future<bool> saveConfig({
+  String? metricoolEmail,
+  String? metricoolPassword,
+  String? driveId,
+}) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/config'),
+      headers: _headers(json: true),
+      body: json.encode({
+        'metricool_email': metricoolEmail,
+        'metricool_password': metricoolPassword,
+        'drive_id': driveId,
+      }),
+    );
+    return response.statusCode == 200;
+  } catch (e) {
+    // ignore: avoid_print
+    print('Config save failed: $e');
+    return false;
+  }
+}
+
+Future<bool> authMetricool() async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/metricool'),
+      headers: _headers(json: true),
+    );
+    return response.statusCode == 200;
+  } catch (e) {
+    // ignore: avoid_print
+    print('Metricool auth failed: $e');
     return false;
   }
 }

@@ -12,9 +12,10 @@ pip install -r backend/requirements.txt
 ```
 
 **Configuration**
-Create `backend/config/.env` from `backend/config/.env.example` and fill in values.
+You can configure credentials via the in-app Settings screen. The backend will write to
+`backend/config/settings.json` automatically (gitignored).
 
-Required for Google Drive:
+Optional for Google Drive (can be set via Settings):
 ```
 GOOGLE_APPLICATION_CREDENTIALS=../keys/service_account.json
 GOOGLE_DRIVE_FOLDER_ID=YOUR_FOLDER_ID_HERE
@@ -31,7 +32,7 @@ METRICOOL_COOKIES_PATH=../keys/metricool_cookies.json
 METRICOOL_ANALYTICS_URL=https://app.metricool.com/...
 ```
 
-Buffer optional values:
+Buffer optional values (or set in Settings):
 ```
 BUFFER_EMAIL=you@example.com
 BUFFER_PASSWORD=your_password
@@ -87,6 +88,6 @@ Create or edit `backend/data_cache/pending_posts.json`. Example shape:
 
 **Notes**
 - Use cookies to avoid frequent logins. Store them in `keys/`.
-- `backend/config/.env`, `keys/`, and `backend/data_cache/` are gitignored.
+- `backend/config/.env`, `backend/config/settings.json`, `keys/`, and `backend/data_cache/` are gitignored.
 - Headless selectors may drift; update them in the modules if UI changes.
 - If `OPEN_METRIC_API_KEY` is set, include it in requests as `X-API-Key`.

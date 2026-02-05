@@ -7,27 +7,26 @@ from pathlib import Path
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
+from backend.modules.config_store import (
+    get_buffer_email,
+    get_buffer_password,
+    get_buffer_cookies_path,
+)
+
 BASE_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = BASE_DIR.parent
 ENV_PATH = BASE_DIR / "config" / ".env"
 load_dotenv(ENV_PATH)
 
 QUEUE_FILE = BASE_DIR / "data_cache" / "pending_posts.json"
-BUFFER_EMAIL = os.getenv("BUFFER_EMAIL")
-BUFFER_PASSWORD = os.getenv("BUFFER_PASSWORD")
-BUFFER_COOKIES_PATH = os.getenv(
-    "BUFFER_COOKIES_PATH", str(PROJECT_ROOT / "keys" / "buffer_cookies.json")
-)
 BUFFER_MAX_QUEUE = int(os.getenv("BUFFER_MAX_QUEUE", "10"))
 BUFFER_HEADLESS = os.getenv("BUFFER_HEADLESS", "true").lower() == "true"
 
 logger = logging.getLogger("open_metric.queue")
 
 
-def _require_env(var_name: str) -> str:
-    value = os.getenv(var_name)
+def _require_value(label: str, value: str | None) -> str:
     if not value:
-        logger.error("Missing required env var %s. Set it in %s", var_name, ENV_PATH)
+        logger.error("Missing required value for %s. Configure it via Settings.", label)
         raise SystemExit(1)
     return value
 
@@ -76,12 +75,15 @@ class QueueManager:
         self._save_queue()
 
     async def fill_slots(self) -> None:
-        cookies_path = Path(BUFFER_COOKIES_PATH) if BUFFER_COOKIES_PATH else None
-        use_cookies = bool(cookies_path and cookies_path.exists())
+        cookies_path = Path(get_buffer_cookies_path())
+        use_cookies = cookies_path.exists()
+
+        buffer_email = get_buffer_email()
+        buffer_password = get_buffer_password()
 
         if not use_cookies:
-            _require_env("BUFFER_EMAIL")
-            _require_env("BUFFER_PASSWORD")
+            _require_value("buffer_email", buffer_email)
+            _require_value("buffer_password", buffer_password)
 
         browser = None
         try:
@@ -101,8 +103,8 @@ class QueueManager:
                 )
 
                 if await page.locator('input[name="email"]').is_visible():
-                    await page.fill('input[name="email"]', BUFFER_EMAIL or "")
-                    await page.fill('input[name="password"]', BUFFER_PASSWORD or "")
+                    await page.fill('input[name="email"]', buffer_email or "")
+                    await page.fill('input[name="password"]', buffer_password or "")
                     await page.click('button[type="submit"]')
                     await page.wait_for_load_state("networkidle")
 

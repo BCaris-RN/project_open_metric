@@ -35,6 +35,7 @@ migrate_working_dir/
 
 # Backend secrets and cache
 backend/config/.env
+backend/config/settings.json
 backend/keys/
 backend/data_cache/
 keys/

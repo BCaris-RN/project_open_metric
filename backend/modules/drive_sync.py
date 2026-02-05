@@ -1,5 +1,4 @@
-﻿import io
-import os
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -13,25 +12,25 @@ from backend.db_init import (
     MASTER_SCHEMA,
     normalize_drive_folder_id,
 )
+from backend.modules.config_store import get_drive_folder_id
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 ENV_PATH = BASE_DIR / "config" / ".env"
 load_dotenv(ENV_PATH)
 
 
-def _require_env(var_name: str) -> str:
-    value = os.getenv(var_name)
+def _require_value(label: str, value: str | None) -> str:
     if not value:
-        print(f"Error: Missing required env var {var_name}.")
-        print(f"-> Set it in {ENV_PATH}")
-        raise SystemExit(1)
+        raise SystemExit(f"Missing required value for {label}. Configure it via Settings.")
     return value
 
 
 class DriveSync:
     def __init__(self):
         self.service = authenticate_drive()
-        self.folder_id = normalize_drive_folder_id(_require_env("GOOGLE_DRIVE_FOLDER_ID"))
+        self.folder_id = normalize_drive_folder_id(
+            _require_value("drive_id", get_drive_folder_id())
+        )
         self.local_path = DATA_DIR / FILE_NAME
         self.local_path.parent.mkdir(parents=True, exist_ok=True)
         self.file_id = self._get_file_id()

@@ -11,3 +11,12 @@ All notable changes are documented in this file.
 - Added Docker support for backend (`backend/Dockerfile`, `.dockerignore`).
 - Sanitized secrets and documented secret-handling policy.
 - Regenerated review exports with platform scaffolding and binary assets split into two files.
+- Added startup CSV initialization when Drive env vars are set.
+- Added selector fallbacks for Metricool navigation.
+- Updated Flutter to respect system theme mode.
+- Added config store and API endpoints for in-app credential management.
+- Added Metricool interactive auth endpoint with cookie capture.
+- Added backend sidecar launcher and readiness gating on the splash screen.
+- Added Settings and Connect Accounts screens.
+- Added backend status indicator in the Home screen app bar.
+- Updated launch flow: Flutter now auto-starts the backend, removing the manual multi-step startup.

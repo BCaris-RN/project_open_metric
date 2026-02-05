@@ -38,17 +38,8 @@ lib/
 pip install -r backend/requirements.txt
 python -m playwright install
 ```
-2. Create `backend/config/.env` from `backend/config/.env.example`.
-3. Place your service account key at `keys/service_account.json` and share the Drive folder with the service account email.
-4. Initialize the Drive CSV:
-```
-python backend/db_init.py
-```
-5. Run the backend API:
-```
-python backend/server.py
-```
-6. Run the Flutter UI:
+2. Place your service account key at `keys/service_account.json` and share the Drive folder with the service account email.
+3. Run the Flutter UI (backend starts automatically):
 ```
 flutter run -d windows
 ```
@@ -56,6 +47,7 @@ If `OPEN_METRIC_API_KEY` is set, pass it into Flutter:
 ```
 flutter run -d windows --dart-define=OPEN_METRIC_API_KEY=your_local_token
 ```
+4. Configure credentials in-app via the Settings screen.
 
 **Run Harvester (Metricool)**
 ```
@@ -76,7 +68,7 @@ docker run --env-file backend/config/.env -p 8000:8000 open-metric-backend
 ```
 
 **Environment Variables**
-Required for Phase 1:
+Optional (can be configured via in-app Settings instead):
 ```
 GOOGLE_APPLICATION_CREDENTIALS=../keys/service_account.json
 GOOGLE_DRIVE_FOLDER_ID=YOUR_FOLDER_ID_HERE

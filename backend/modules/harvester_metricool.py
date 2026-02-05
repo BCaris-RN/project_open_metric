@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -16,24 +15,22 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.modules.drive_sync import DriveSync
 from backend.modules.sqlite_store import SQLiteStore
+from backend.modules.config_store import (
+    get_metricool_email,
+    get_metricool_password,
+    get_metricool_cookies_path,
+    get_metricool_analytics_url,
+)
 
 ENV_PATH = BASE_DIR / "config" / ".env"
 load_dotenv(ENV_PATH)
 
-EMAIL = os.getenv("METRICOOL_EMAIL")
-PASSWORD = os.getenv("METRICOOL_PASSWORD")
-COOKIES_PATH = os.getenv(
-    "METRICOOL_COOKIES_PATH", str(PROJECT_ROOT / "keys" / "metricool_cookies.json")
-)
-ANALYTICS_URL = os.getenv("METRICOOL_ANALYTICS_URL")
-
 logger = logging.getLogger("open_metric.harvester")
 
 
-def _require_env(var_name: str) -> str:
-    value = os.getenv(var_name)
+def _require_value(label: str, value: str | None) -> str:
     if not value:
-        logger.error("Missing required env var %s. Set it in %s", var_name, ENV_PATH)
+        logger.error("Missing required value for %s. Configure it via Settings.", label)
         raise SystemExit(1)
     return value
 
@@ -105,12 +102,16 @@ class MetricoolHarvester:
         raise last_exc
 
     async def scrape(self):
-        cookies_path = Path(COOKIES_PATH)
+        analytics_url = get_metricool_analytics_url()
+        cookies_path = Path(get_metricool_cookies_path())
         use_cookies = cookies_path.exists()
 
+        email = get_metricool_email()
+        password = get_metricool_password()
+
         if not use_cookies:
-            _require_env("METRICOOL_EMAIL")
-            _require_env("METRICOOL_PASSWORD")
+            _require_value("metricool_email", email)
+            _require_value("metricool_password", password)
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -126,37 +127,57 @@ class MetricoolHarvester:
             )
 
             if await page.locator('input[name="email"]').is_visible():
-                await page.fill('input[name="email"]', EMAIL or "")
-                await page.fill('input[name="password"]', PASSWORD or "")
+                await page.fill('input[name="email"]', email or "")
+                await page.fill('input[name="password"]', password or "")
                 await page.click('button[type="submit"]')
                 await page.wait_for_load_state("networkidle")
 
-            if ANALYTICS_URL:
+            if analytics_url:
                 await self._retry(
-                    lambda: page.goto(ANALYTICS_URL, wait_until="networkidle"),
+                    lambda: page.goto(analytics_url, wait_until="networkidle"),
                     "Metricool analytics URL",
                 )
             else:
                 logger.info("Navigating to Analytics...")
 
                 async def _open_analytics():
-                    try:
-                        await page.get_by_role("link", name="Analytics").click(timeout=10000)
-                        return True
-                    except Exception:
-                        await page.click("text=Analytics", timeout=10000)
-                        return True
+                    selectors = [
+                        ("role", ("link", "Analytics")),
+                        ("text", "text=Analytics"),
+                        ("css", "a[href*='analytics']"),
+                        ("css", "a[href*='Analytics']"),
+                    ]
+                    for mode, value in selectors:
+                        try:
+                            if mode == "role":
+                                await page.get_by_role(value[0], name=value[1]).click(timeout=10000)
+                            else:
+                                await page.click(value, timeout=10000)
+                            return True
+                        except Exception:
+                            continue
+                    raise RuntimeError("Analytics selector not found")
 
                 await self._retry(_open_analytics, "Analytics navigation")
                 await page.wait_for_timeout(3000)
 
             async def _open_list():
-                try:
-                    await page.get_by_role("button", name="List").click(timeout=5000)
-                    return True
-                except Exception:
-                    await page.click("text=List", timeout=5000)
-                    return True
+                selectors = [
+                    ("role", ("button", "List")),
+                    ("text", "text=List"),
+                    ("css", "button[data-testid*='list']"),
+                    ("css", "button[aria-label*='List']"),
+                ]
+                for mode, value in selectors:
+                    try:
+                        if mode == "role":
+                            await page.get_by_role(value[0], name=value[1]).click(timeout=5000)
+                        else:
+                            await page.click(value, timeout=5000)
+                        return True
+                    except Exception:
+                        continue
+                raise RuntimeError("List selector not found")
 
             await self._retry(_open_list, "List toggle")
 

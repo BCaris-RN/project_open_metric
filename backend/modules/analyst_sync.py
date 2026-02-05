@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from googleapiclient.http import MediaFileUpload
 
 from backend.db_init import DATA_DIR, FILE_NAME, authenticate_drive, normalize_drive_folder_id
+from backend.modules.config_store import get_drive_folder_id
 from backend.modules.sqlite_store import SQLiteStore
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -52,7 +53,7 @@ def _ensure_drive_file(service, folder_id: str, filename: str) -> str:
 
 def sync_notebook() -> None:
     file_id = _get_env("NOTEBOOKLM_SOURCE_FILE_ID")
-    folder_id_raw = _get_env("NOTEBOOKLM_FOLDER_ID") or _get_env("GOOGLE_DRIVE_FOLDER_ID")
+    folder_id_raw = _get_env("NOTEBOOKLM_FOLDER_ID") or _get_env("GOOGLE_DRIVE_FOLDER_ID") or get_drive_folder_id()
     filename = _get_env("NOTEBOOKLM_SOURCE_NAME") or "NotebookLM_Source.csv"
 
     if not file_id and not folder_id_raw:

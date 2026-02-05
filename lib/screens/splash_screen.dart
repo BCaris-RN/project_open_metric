@@ -1,9 +1,11 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../services/backend_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,7 +22,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   late final Animation<double> _scale;
 
   Timer? _bootTimer;
+  Timer? _healthTimer;
   int _visibleLines = 0;
+  bool _bootComplete = false;
+  bool _backendReady = false;
 
   final List<String> _bootLines = const [
     'Boot core: OK',
@@ -34,6 +39,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
+
+    BackendService.instance.start();
 
     _fadeController = AnimationController(
       vsync: this,
@@ -58,7 +65,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _bootController.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted) {
-        context.go('/');
+        _bootComplete = true;
+        _maybeNavigate();
       }
     });
 
@@ -74,11 +82,33 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         }
       });
     });
+
+    _healthTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+      final ready = await BackendService.instance.isReady();
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (ready) {
+        setState(() {
+          _backendReady = true;
+        });
+        timer.cancel();
+        _maybeNavigate();
+      }
+    });
+  }
+
+  void _maybeNavigate() {
+    if (_bootComplete && _backendReady && mounted) {
+      context.go('/');
+    }
   }
 
   @override
   void dispose() {
     _bootTimer?.cancel();
+    _healthTimer?.cancel();
     _fadeController.dispose();
     _bootController.dispose();
     _flickerController.dispose();
@@ -87,6 +117,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    final statusText = _backendReady ? 'CORE ONLINE' : 'WAITING FOR CORE...';
+
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D0D),
       body: Stack(
@@ -141,7 +173,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         return Opacity(opacity: glow, child: child);
                       },
                       child: Text(
-                        'INITIALIZING AGENTS...',
+                        statusText,
                         style: GoogleFonts.firaCode(
                           fontSize: 14,
                           color: Colors.greenAccent,

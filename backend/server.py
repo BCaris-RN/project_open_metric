@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from playwright.async_api import async_playwright
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
@@ -23,6 +25,16 @@ from backend.modules.analyst_sync import sync_notebook
 from backend.modules.creative_engine import CreativeEngine
 from backend.modules.drive_sync import DriveSync
 from backend.modules.sqlite_store import SQLiteStore
+from backend.db_init import init_data_lake
+from backend.modules.config_store import (
+    config_status,
+    save_config,
+    get_drive_folder_id,
+    get_service_account_path,
+    get_metricool_email,
+    get_metricool_password,
+    get_metricool_cookies_path,
+)
 
 DATA_DIR = BASE_DIR / "data_cache"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -44,7 +56,7 @@ OLLAMA_STATUS_URL = os.getenv("OLLAMA_STATUS_URL", "http://localhost:11434/api/t
 
 STORE = SQLiteStore()
 
-app = FastAPI(title="Open-Metric Command Center", version="1.1")
+app = FastAPI(title="Open-Metric Command Center", version="1.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,6 +78,12 @@ class Post(BaseModel):
 class GenerateRequest(BaseModel):
     topic: str
     tone: str = "professional"
+
+
+class ConfigUpdate(BaseModel):
+    metricool_email: Optional[str] = None
+    metricool_password: Optional[str] = None
+    drive_id: Optional[str] = None
 
 
 def _log(message: str) -> None:
@@ -134,6 +152,35 @@ async def run_queue_task() -> None:
         _log(f"[Background] Queue fill failed: {exc}")
 
 
+async def run_metricool_auth() -> None:
+    email = get_metricool_email()
+    password = get_metricool_password()
+    cookies_path = Path(get_metricool_cookies_path())
+    cookies_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        await page.goto("https://app.metricool.com/", wait_until="domcontentloaded")
+
+        if email and password and await page.locator('input[name="email"]').is_visible():
+            await page.fill('input[name="email"]', email)
+            await page.fill('input[name="password"]', password)
+            await page.click('button[type="submit"]')
+
+        try:
+            await page.wait_for_url("**/dashboard**", timeout=180000)
+        except Exception as exc:
+            await browser.close()
+            raise RuntimeError("Metricool login not detected.") from exc
+
+        cookies = await context.cookies()
+        cookies_path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
+        await browser.close()
+
+
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
     if API_KEY and request.url.path not in {"/", "/docs", "/openapi.json"}:
@@ -146,6 +193,24 @@ async def api_key_middleware(request: Request, call_next):
 async def startup_check():
     if not API_KEY:
         logger.warning("OPEN_METRIC_API_KEY not set. API is unauthenticated.")
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    queue_path = DATA_DIR / "pending_posts.json"
+    if not queue_path.exists():
+        queue_path.write_text("[]", encoding="utf-8")
+
+    drive_id = get_drive_folder_id()
+    service_account_path = Path(get_service_account_path())
+    if drive_id and service_account_path.exists():
+        csv_path = DATA_DIR / "Social_Metrics_Master.csv"
+        if not csv_path.exists():
+            try:
+                await run_in_thread(init_data_lake)
+                logger.info("Drive CSV initialized.")
+            except Exception as exc:
+                logger.warning("Drive CSV init failed: %s", exc)
+
     try:
         response = requests.get(OLLAMA_STATUS_URL, timeout=2)
         if response.status_code != 200:
@@ -157,6 +222,27 @@ async def startup_check():
 @app.get("/")
 async def health_check():
     return {"status": "online", "system": "Open-Metric Orchestrator"}
+
+
+@app.get("/config")
+async def get_config():
+    status = config_status()
+    return status
+
+
+@app.post("/config")
+async def set_config(update: ConfigUpdate):
+    save_config(update.model_dump())
+    return config_status()
+
+
+@app.post("/auth/metricool")
+async def auth_metricool():
+    try:
+        await run_metricool_auth()
+        return {"status": "success"}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
 
 
 @app.get("/stats")

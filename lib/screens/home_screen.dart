@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
 
 import '../api/api_client.dart';
+import '../services/backend_service.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -26,6 +27,12 @@ class HomeScreen extends ConsumerWidget {
           style: techFont.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         actions: [
+          _BackendStatusChip(techFont: techFont),
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white70),
+            tooltip: 'Settings',
+            onPressed: () => context.push('/settings'),
+          ),
           IconButton(
             icon: const Icon(Icons.psychology, color: Colors.purpleAccent),
             tooltip: 'Access Brain',
@@ -198,6 +205,41 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: const Color(0xFF222222),
       circularStrokeCap: CircularStrokeCap.round,
       animation: true,
+    );
+  }
+}
+
+class _BackendStatusChip extends StatelessWidget {
+  const _BackendStatusChip({required this.techFont});
+
+  final TextStyle techFont;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: Stream.periodic(const Duration(seconds: 1))
+          .asyncMap((_) => BackendService.instance.isReady()),
+      initialData: false,
+      builder: (context, snapshot) {
+        final isOnline = snapshot.data ?? false;
+        final color = isOnline ? Colors.greenAccent : Colors.redAccent;
+        final label = isOnline ? 'CORE ONLINE' : 'CORE OFFLINE';
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withValues(alpha: 0.8)),
+            ),
+            child: Text(
+              label,
+              style: techFont.copyWith(fontSize: 10, color: color),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -6,8 +8,15 @@ import 'screens/brain_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/queue_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/connect_accounts_screen.dart';
+import 'services/backend_service.dart';
 
 void main() {
+  PlatformDispatcher.instance.onExitRequested = () async {
+    BackendService.instance.kill();
+    return AppExitResponse.exit;
+  };
   runApp(const ProviderScope(child: OpenMetricApp()));
 }
 
@@ -18,6 +27,8 @@ final _router = GoRouter(
     GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
     GoRoute(path: '/queue', builder: (context, state) => const QueueScreen()),
     GoRoute(path: '/brain', builder: (context, state) => const BrainScreen()),
+    GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+    GoRoute(path: '/connect', builder: (context, state) => const ConnectAccountsScreen()),
   ],
 );
 
@@ -29,7 +40,9 @@ class OpenMetricApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Open Metric',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(),
+      theme: ThemeData.light(),
+      darkTheme: ThemeData.dark(),
+      themeMode: ThemeMode.system,
       routerConfig: _router,
     );
   }
