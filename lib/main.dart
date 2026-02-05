@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,10 +11,8 @@ import 'screens/connect_accounts_screen.dart';
 import 'services/backend_service.dart';
 
 void main() {
-  PlatformDispatcher.instance.onExitRequested = () async {
-    BackendService.instance.kill();
-    return AppExitResponse.exit;
-  };
+  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding.instance.addObserver(_AppLifecycleObserver());
   runApp(const ProviderScope(child: OpenMetricApp()));
 }
 
@@ -45,5 +41,14 @@ class OpenMetricApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       routerConfig: _router,
     );
+  }
+}
+
+class _AppLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      BackendService.instance.kill();
+    }
   }
 }

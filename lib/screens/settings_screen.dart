@@ -89,14 +89,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         : _metricoolPassword.text.trim(),
                     driveId: _driveId.text.trim().isEmpty ? null : _driveId.text.trim(),
                   );
-                  if (!mounted) return;
+                  if (!context.mounted) return;
+                  final messenger = ScaffoldMessenger.of(context);
                   if (success) {
                     ref.invalidate(configProvider);
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('Settings saved.')),
                     );
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('Failed to save settings.')),
                     );
                   }

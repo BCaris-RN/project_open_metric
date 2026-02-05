@@ -46,9 +46,10 @@ class _ConnectAccountsScreenState extends ConsumerState<ConnectAccountsScreen> {
                   : () async {
                       setState(() => _isLoading = true);
                       final success = await authMetricool();
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       setState(() => _isLoading = false);
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      final messenger = ScaffoldMessenger.of(context);
+                      messenger.showSnackBar(
                         SnackBar(
                           content: Text(success ? 'Metricool connected.' : 'Connection failed.'),
                         ),
